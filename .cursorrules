@@ -1,0 +1,299 @@
+# Contexto del Proyecto: Vault DeFi en Base Network
+
+## 🎯 Objetivo del Proyecto
+
+Desarrollar un vault DeFi optimizador de rendimientos en Base (Layer 2 de Ethereum), inspirado en YO Protocol pero en escala más accesible. El objetivo es crear una aplicación educativa y funcional que permita a usuarios depositar USDC y generar yields automáticamente.
+
+## 🏗️ Stack Tecnológico Principal
+
+### Blockchain y Smart Contracts
+- **Network**: Base (Ethereum Layer 2)
+- **Lenguaje**: Solidity ^0.8.20
+- **Framework**: Foundry (forge, cast, anvil)
+- **Estándar Principal**: ERC4626 (Tokenized Vault Standard)
+- **Librerías**: OpenZeppelin Contracts v5.0+
+- **Testing**: Foundry Test (Solidity-based tests)
+
+### Frontend (Fase 2)
+- **Framework**: Next.js 14+ con App Router
+- **Lenguaje**: TypeScript
+- **Web3**: viem + wagmi v2
+- **Wallet Connect**: RainbowKit
+- **UI**: TailwindCSS + shadcn/ui
+- **Estado**: Zustand o Jotai
+
+### Integraciones DeFi
+- **Protocolo Principal**: Aave V3 en Base
+- **Asset Inicial**: USDC (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
+- **Estrategia Inicial**: Single-strategy lending en Aave
+
+## 📐 Arquitectura del Proyecto
+
+### Contratos Principales
+
+1. **VaultToken.sol** (ERC4626)
+   - Contrato principal del vault
+   - Gestiona depósitos y retiros de usuarios
+   - Emite shares (tokens ERC20) proporcionales al depósito
+   - Calcula y cobra fees sobre ganancias
+   - Implementa pausable y reentrancy guard
+
+2. **AaveStrategy.sol**
+   - Estrategia de inversión en Aave V3
+   - Funciones: invest(), divest(), claimRewards()
+   - Interactúa con IPool de Aave
+   - Gestiona aTokens recibidos
+
+3. **Interfaces/**
+   - IStrategy.sol: Interface estándar para estrategias
+   - IAave.sol: Interfaces de Aave V3
+
+### Flujo de Datos
+
+```
+Usuario → deposit(USDC) → VaultToken
+                            ↓
+                     Mint vault shares
+                            ↓
+                     Strategy.invest()
+                            ↓
+                     Aave.supply()
+                            ↓
+                     Genera yield automático
+                            ↓
+                     harvest() (periódico)
+                            ↓
+                     Cobra performance fee
+                            ↓
+                     Usuario puede withdraw() en cualquier momento
+```
+
+## 🔒 Principios de Seguridad
+
+1. **Reentrancy Protection**: Usar OpenZeppelin ReentrancyGuard
+2. **Access Control**: Owner para funciones administrativas, modifier onlyVault para estrategias
+3. **Pausable**: Poder pausar en emergencias
+4. **Limits**: maxTotalAssets, minDepositAmount
+5. **Validation**: Validar todos los inputs
+6. **Slippage**: Protección contra frontrunning
+
+## 💰 Modelo Económico
+
+- **Performance Fee**: 10% sobre ganancias (modificable, max 20%)
+- **Management Fee**: 1% anual sobre TVL (modificable, max 5%)
+- **Withdrawal Fee**: 0% (sin lockup period)
+- **Min Deposit**: 0.01 USDC (configurable)
+- **Max TVL**: 1,000,000 USDC inicial (incrementable)
+
+## 📝 Convenciones de Código
+
+### Solidity
+- Seguir [Solidity Style Guide](https://docs.soliditylang.org/en/latest/style-guide.html)
+- Order: pragma → imports → interfaces → contracts
+- Dentro de contrato: state vars → events → modifiers → constructor → functions
+- Funciones: external → public → internal → private
+- Nombrar: camelCase para funciones, PascalCase para contratos
+- Comentarios: NatSpec para todas las funciones públicas
+
+### TypeScript/Frontend
+- ESLint + Prettier configurados
+- Componentes: PascalCase
+- Hooks: use prefix
+- Utilities: camelCase
+- Constantes: UPPER_SNAKE_CASE
+
+### Git Commits
+- Conventional Commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, etc.
+- Ejemplo: `feat: add harvest functionality to vault`
+- Commits en español están OK
+
+## 🧪 Testing Strategy
+
+### Tests Obligatorios
+1. **Unit Tests** (por contrato)
+   - Cada función pública debe tener tests
+   - Edge cases (primer depósito, vault vacío, retiro total)
+   - Revert scenarios
+   
+2. **Integration Tests**
+   - Flujo completo: deposit → harvest → withdraw
+   - Interacción VaultToken ↔ Strategy ↔ Aave
+   
+3. **Fork Tests** (opcional pero recomendado)
+   - Fork de Base mainnet
+   - Tests con contratos reales de Aave
+
+### Coverage Target
+- Mínimo 80% coverage
+- 100% en funciones críticas (deposit, withdraw, invest, divest)
+
+## 🚀 Workflow de Desarrollo
+
+### Fase Actual: MVP Smart Contracts
+1. ✅ Documentación creada
+2. 🔄 Crear estructura de proyecto Foundry
+3. 🔄 Implementar VaultToken.sol básico
+4. 🔄 Implementar AaveStrategy.sol
+5. 🔄 Tests unitarios completos
+6. 🔄 Tests de integración
+7. 🔄 Deploy a Base Sepolia
+8. 🔄 Verificación en BaseScan
+
+### Fase 2: Frontend (Próximo)
+1. Setup Next.js + wagmi
+2. Componentes de UI (Connect Wallet, Deposit, Withdraw)
+3. Dashboard con métricas (TVL, APY, user balance)
+4. Integración con contratos
+
+### Fase 3: Producción
+1. Auditoría de seguridad
+2. Bug bounty
+3. Deploy a Base mainnet
+4. Marketing y comunidad
+
+## 📦 Dependencias Clave
+
+### Foundry
+```toml
+[dependencies]
+openzeppelin-contracts = "5.0.1"
+forge-std = { git = "https://github.com/foundry-rs/forge-std" }
+```
+
+### Frontend (futuro)
+```json
+{
+  "next": "^14.0.0",
+  "react": "^18.2.0",
+  "viem": "^2.0.0",
+  "wagmi": "^2.0.0",
+  "@rainbow-me/rainbowkit": "^2.0.0"
+}
+```
+
+## 🔗 Addresses Importantes (Base)
+
+### Mainnet
+- USDC: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+- Aave V3 Pool: `0xA238Dd80C259a72e81d7e4664a9801593F98d1c5`
+- Chain ID: 8453
+- RPC: https://mainnet.base.org
+
+### Sepolia (Testnet)
+- Chain ID: 84532
+- RPC: https://sepolia.base.org
+- Faucet: https://faucet.quicknode.com/base/sepolia
+- Explorer: https://sepolia.basescan.org
+
+## 🎓 Referencias Técnicas
+
+### Estándares
+- [ERC4626](https://eips.ethereum.org/EIPS/eip-4626): Tokenized Vault Standard
+- [ERC20](https://eips.ethereum.org/EIPS/eip-20): Token standard
+
+### Documentación
+- [Base Docs](https://docs.base.org/)
+- [Aave V3 Docs](https://docs.aave.com/developers/getting-started/readme)
+- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)
+- [Foundry Book](https://book.getfoundry.sh/)
+
+### Inspiración
+- [YO Protocol](https://docs.yo.xyz): Arquitectura de referencia
+- [Yearn Finance](https://docs.yearn.fi/): Vaults pioneros
+- [ERC4626 Alliance](https://erc4626.info/): Ejemplos y mejores prácticas
+
+## 🎯 Prioridades de Desarrollo
+
+1. **Seguridad**: Siempre primero. Tests exhaustivos, validaciones, auditorías
+2. **Simplicidad**: MVP funcional antes que features complejas
+3. **Gas Efficiency**: Optimizar costos donde sea razonable
+4. **User Experience**: Interfaz clara y fácil de usar
+5. **Documentación**: Código bien comentado y docs actualizados
+
+## 🚨 Limitaciones Conocidas
+
+- **Fase MVP**: Solo estrategia Aave, single-asset (USDC)
+- **No hay**: Rebalanceo automático, multi-estrategia, governance
+- **Testnet primero**: No deploy a mainnet sin auditoría
+- **Max TVL limitado**: Cap de seguridad para fase inicial
+
+## 🤖 Comandos Frecuentes
+
+```bash
+# Build y test
+forge build
+forge test -vvv
+forge coverage
+
+# Deploy local
+anvil
+forge script script/Deploy.s.sol --fork-url http://localhost:8545 --broadcast
+
+# Deploy testnet
+forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast --verify
+
+# Interacción
+cast call <vault> "totalAssets()"
+cast send <vault> "deposit(uint256,address)" 1000000 <address>
+
+# Gas report
+forge test --gas-report
+
+# Análisis seguridad
+slither contracts/VaultToken.sol
+```
+
+## 📊 Métricas de Éxito
+
+### MVP
+- [ ] Contratos compilando sin warnings
+- [ ] 100% tests passing
+- [ ] >80% code coverage
+- [ ] Deploy exitoso en testnet
+- [ ] 10+ transacciones de prueba exitosas
+
+### Fase 2
+- [ ] Frontend conectado y funcional
+- [ ] 50+ usuarios de testnet
+- [ ] $10k+ TVL en testnet
+- [ ] Documentación completa
+
+### Producción
+- [ ] Auditoría completa
+- [ ] Deploy en mainnet
+- [ ] $100k+ TVL real
+- [ ] 100+ usuarios activos
+
+## 💡 Notas para IA/Cursor
+
+- **Priorizar Base**: Todas las referencias a blockchain deben ser específicas a Base
+- **Solidity moderno**: Usar sintaxis 0.8.20+, custom errors, etc.
+- **Tests primero**: Al implementar features nuevas, escribir tests primero
+- **Gas awareness**: Mencionar costos de gas cuando sea relevante
+- **Seguridad**: Siempre considerar vectores de ataque en código nuevo
+- **Documentación inline**: Agregar NatSpec a todas las funciones públicas
+- **Incremental**: Preferir cambios pequeños e iterativos sobre grandes refactors
+
+## 🔄 Estado Actual del Proyecto
+
+**Última actualización**: Diciembre 2025
+
+**Fase actual**: MVP - Documentación completa ✅
+
+**Próximos pasos**:
+1. Inicializar proyecto Foundry
+2. Implementar contratos básicos
+3. Setup de tests
+4. Deploy a testnet
+
+**Decisiones tomadas**:
+- ✅ Base como blockchain principal (no Avail)
+- ✅ ERC4626 como estándar
+- ✅ Foundry como framework
+- ✅ Aave como estrategia inicial
+- ✅ USDC como asset inicial
+
+---
+
+**Este archivo es el contexto central del proyecto. Mantenerlo actualizado con decisiones arquitectónicas importantes.**
+
