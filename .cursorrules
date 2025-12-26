@@ -23,9 +23,9 @@ Desarrollar un vault DeFi optimizador de rendimientos en Base (Layer 2 de Ethere
 - **Estado**: Zustand o Jotai
 
 ### Integraciones DeFi
-- **Protocolo Principal**: Aave V3 en Base
+- **Protocolo Principal**: Auto Finance en Base
 - **Asset Inicial**: USDC (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
-- **Estrategia Inicial**: Single-strategy lending en Aave
+- **Estrategia Inicial**: Single-strategy en Auto Finance baseUSD Autopool (~8.82% APY)
 
 ## 📐 Arquitectura del Proyecto
 
@@ -37,16 +37,18 @@ Desarrollar un vault DeFi optimizador de rendimientos en Base (Layer 2 de Ethere
    - Emite shares (tokens ERC20) proporcionales al depósito
    - Calcula y cobra fees sobre ganancias
    - Implementa pausable y reentrancy guard
+   - Patrón UUPS upgradeable
 
-2. **AaveStrategy.sol**
-   - Estrategia de inversión en Aave V3
-   - Funciones: invest(), divest(), claimRewards()
-   - Interactúa con IPool de Aave
-   - Gestiona aTokens recibidos
+2. **AutoFinanceStrategy.sol**
+   - Estrategia de inversión en Auto Finance baseUSD
+   - Funciones: invest(), divest(), claimRewards(), emergencyWithdraw()
+   - Interactúa con Auto Finance Autopool (ERC4626)
+   - Gestiona shares del autopool
+   - Protección contra slippage
 
 3. **Interfaces/**
    - IStrategy.sol: Interface estándar para estrategias
-   - IAave.sol: Interfaces de Aave V3
+   - IAutoPool.sol: Interface de Auto Finance (extiende IERC4626)
 
 ### Flujo de Datos
 
@@ -57,7 +59,9 @@ Usuario → deposit(USDC) → VaultToken
                             ↓
                      Strategy.invest()
                             ↓
-                     Aave.supply()
+                  AutoFinance Autopool.deposit()
+                            ↓
+     Rebalancea entre Aave, Morpho, Curve, etc.
                             ↓
                      Genera yield automático
                             ↓
@@ -175,7 +179,7 @@ forge-std = { git = "https://github.com/foundry-rs/forge-std" }
 
 ### Mainnet
 - USDC: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
-- Aave V3 Pool: `0xA238Dd80C259a72e81d7e4664a9801593F98d1c5`
+- Auto Finance baseUSD: `0x275F0A1Db98db1c4e915BDE5B5D2F5a5eD4C6D8F` (verificar antes de deploy)
 - Chain ID: 8453
 - RPC: https://mainnet.base.org
 
@@ -193,11 +197,13 @@ forge-std = { git = "https://github.com/foundry-rs/forge-std" }
 
 ### Documentación
 - [Base Docs](https://docs.base.org/)
+- [Auto Finance](https://docs.auto.finance/)
 - [Aave V3 Docs](https://docs.aave.com/developers/getting-started/readme)
 - [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)
 - [Foundry Book](https://book.getfoundry.sh/)
 
 ### Inspiración
+- [Auto Finance](https://app.auto.finance/pools/baseUSD): Protocolo de optimización de yield
 - [YO Protocol](https://docs.yo.xyz): Arquitectura de referencia
 - [Yearn Finance](https://docs.yearn.fi/): Vaults pioneros
 - [ERC4626 Alliance](https://erc4626.info/): Ejemplos y mejores prácticas
@@ -267,6 +273,7 @@ slither contracts/VaultToken.sol
 ## 💡 Notas para IA/Cursor
 
 - **Priorizar Base**: Todas las referencias a blockchain deben ser específicas a Base
+- **Auto Finance**: La estrategia principal usa Auto Finance baseUSD (8.82% APY)
 - **Solidity moderno**: Usar sintaxis 0.8.20+, custom errors, etc.
 - **Tests primero**: Al implementar features nuevas, escribir tests primero
 - **Gas awareness**: Mencionar costos de gas cuando sea relevante
@@ -278,20 +285,21 @@ slither contracts/VaultToken.sol
 
 **Última actualización**: Diciembre 2025
 
-**Fase actual**: MVP - Documentación completa ✅
+**Fase actual**: MVP - Implementación completa con Auto Finance ✅
 
 **Próximos pasos**:
-1. Inicializar proyecto Foundry
-2. Implementar contratos básicos
-3. Setup de tests
-4. Deploy a testnet
+1. Testing en mainnet fork de Base
+2. Deploy a Base mainnet
+3. Monitoreo y optimización
+4. Frontend (Next.js)
 
 **Decisiones tomadas**:
-- ✅ Base como blockchain principal (no Avail)
+- ✅ Base como blockchain principal
 - ✅ ERC4626 como estándar
 - ✅ Foundry como framework
-- ✅ Aave como estrategia inicial
+- ✅ Auto Finance como estrategia principal (en lugar de Aave)
 - ✅ USDC como asset inicial
+- ✅ Patrón UUPS para upgradeability
 
 ---
 

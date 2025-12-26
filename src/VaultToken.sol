@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "./interfaces/IStrategy.sol";
 
 /**
  * @title VaultToken
  * @notice Vault ERC4626 que genera yields automáticamente depositando en estrategias DeFi
- * @dev Implementa el estándar ERC4626 para vaults tokenizados
+ * @dev Implementa el estándar ERC4626 para vaults tokenizados con patrón UUPS upgradeable
  * 
  * Características:
  * - Depósitos y retiros sin lockup period
@@ -17,8 +20,18 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  * - Management fee anual (1% default)
  * - Pausable en caso de emergencias
  * - Protección contra reentrancy
+ * - Upgradeable con UUPS pattern
+ * 
+ * @custom:security-contact security@vault.xyz
  */
-contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
+contract VaultToken is 
+    Initializable,
+    ERC4626Upgradeable, 
+    OwnableUpgradeable, 
+    ReentrancyGuardUpgradeable, 
+    PausableUpgradeable,
+    UUPSUpgradeable 
+{
     
     // ========== STATE VARIABLES ==========
     
@@ -43,6 +56,9 @@ contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
     /// @notice Dirección del treasury donde van los fees
     address public treasury;
     
+    /// @notice Último totalAssets conocido (para tracking de yields)
+    uint256 public lastTotalAssets;
+    
     // ========== CONSTANTS ==========
     
     uint256 public constant MAX_PERFORMANCE_FEE = 2000; // 20% máximo
@@ -66,33 +82,47 @@ contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
     error ZeroAddress();
     error NoAssetsToHarvest();
     
-    // ========== CONSTRUCTOR ==========
+    // ========== CONSTRUCTOR & INITIALIZER ==========
+    
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
     
     /**
-     * @notice Inicializa el vault
+     * @notice Inicializa el vault (reemplaza al constructor en proxies)
      * @param _asset Token subyacente (ej: USDC)
      * @param _name Nombre del vault token (ej: "Vault USDC")
      * @param _symbol Símbolo del vault token (ej: "vUSDC")
      * @param _treasury Dirección donde se envían los fees
+     * @param _owner Dirección del owner del vault
      */
-    constructor(
+    function initialize(
         IERC20 _asset,
         string memory _name,
         string memory _symbol,
-        address _treasury
-    ) 
-        ERC4626(_asset) 
-        ERC20(_name, _symbol) 
-        Ownable(msg.sender)
-    {
+        address _treasury,
+        address _owner
+    ) public initializer {
         if (_treasury == address(0)) revert ZeroAddress();
+        if (_owner == address(0)) revert ZeroAddress();
         
+        // Inicializar contratos base
+        __ERC4626_init(_asset);
+        __ERC20_init(_name, _symbol);
+        __Ownable_init(_owner);
+        __ReentrancyGuard_init();
+        __Pausable_init();
+        __UUPSUpgradeable_init();
+        
+        // Inicializar state variables
         treasury = _treasury;
         performanceFee = 1000;              // 10% default
         managementFee = 100;                // 1% anual default
         lastFeeCollection = block.timestamp;
         maxTotalAssets = 1_000_000e6;       // 1M USDC (6 decimales)
         minDepositAmount = 0.01e6;          // 0.01 USDC
+        lastTotalAssets = 0;                // Inicializar tracking de yields
     }
     
     // ========== DEPOSIT/WITHDRAW FUNCTIONS ==========
@@ -123,6 +153,9 @@ contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
         if (strategy != address(0)) {
             _investInStrategy(assets);
         }
+        
+        // Actualizar tracking para harvest
+        lastTotalAssets = totalAssets();
     }
     
     /**
@@ -151,6 +184,43 @@ contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
         
         // Llamar a la implementación base de ERC4626
         shares = super.withdraw(assets, receiver, owner);
+        
+        // Actualizar tracking para harvest
+        lastTotalAssets = totalAssets();
+    }
+    
+    /**
+     * @notice Redeem shares por assets
+     * @param shares Cantidad de shares a quemar
+     * @param receiver Dirección que recibirá los assets
+     * @param owner Dueño de los shares
+     * @return assets Cantidad de assets recibidos
+     */
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address owner
+    )
+        public
+        override
+        nonReentrant
+        whenNotPaused
+        returns (uint256 assets)
+    {
+        // Calcular cuántos assets corresponden a estos shares
+        assets = previewRedeem(shares);
+        
+        // Si no hay suficiente balance idle, retirar de estrategia
+        uint256 idle = IERC20(asset()).balanceOf(address(this));
+        if (idle < assets && strategy != address(0)) {
+            _divestFromStrategy(assets - idle);
+        }
+        
+        // Llamar a la implementación base de ERC4626
+        assets = super.redeem(shares, receiver, owner);
+        
+        // Actualizar tracking para harvest
+        lastTotalAssets = totalAssets();
     }
     
     // ========== VAULT MANAGEMENT ==========
@@ -159,28 +229,36 @@ contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
      * @notice Recolecta yields de la estrategia y cobra fees
      * @dev Solo puede ser llamado por el owner o un keeper autorizado
      */
-    function harvest() external onlyOwner {
+    function harvest() external virtual onlyOwner {
         if (strategy == address(0)) revert NoAssetsToHarvest();
         
-        uint256 beforeBalance = totalAssets();
+        // El balance actual incluye todos los yields acumulados
+        uint256 currentTotalAssets = totalAssets();
         
-        // Aquí se llamaría a strategy.claimRewards()
-        // Por ahora es placeholder para el MVP
-        
-        uint256 afterBalance = totalAssets();
-        
-        if (afterBalance > beforeBalance) {
-            uint256 profit = afterBalance - beforeBalance;
-            
-            // Cobrar performance fee
-            uint256 feeAmount = (profit * performanceFee) / FEE_BASIS;
-            
-            if (feeAmount > 0) {
-                IERC20(asset()).transfer(treasury, feeAmount);
-                emit Harvested(profit, feeAmount);
-            }
+        // Si es el primer harvest o no hay yields, actualizar y salir
+        if (lastTotalAssets == 0 || currentTotalAssets <= lastTotalAssets) {
+            lastTotalAssets = currentTotalAssets;
+            lastFeeCollection = block.timestamp;
+            return;
         }
         
+        // Calcular profit = incremento en assets
+        uint256 profit = currentTotalAssets - lastTotalAssets;
+        
+        // Cobrar performance fee sobre el profit
+        uint256 feeAmount = (profit * performanceFee) / FEE_BASIS;
+        
+        if (feeAmount > 0) {
+            // Retirar el fee amount de la estrategia al vault
+            _divestFromStrategy(feeAmount);
+            
+            // Transferir fee al treasury
+            IERC20(asset()).transfer(treasury, feeAmount);
+            emit Harvested(profit, feeAmount);
+        }
+        
+        // Actualizar el tracking (descontar los fees cobrados)
+        lastTotalAssets = totalAssets();
         lastFeeCollection = block.timestamp;
     }
     
@@ -192,7 +270,11 @@ contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
         uint256 idle = IERC20(asset()).balanceOf(address(this));
         
         // Si hay estrategia, sumar también esos assets
-        // Por ahora solo retorna idle para el MVP
+        if (strategy != address(0)) {
+            uint256 strategyAssets = IStrategy(strategy).totalAssets();
+            return idle + strategyAssets;
+        }
+        
         return idle;
     }
     
@@ -262,9 +344,11 @@ contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
      * @param amount Cantidad a invertir
      */
     function _investInStrategy(uint256 amount) internal {
-        // TODO: Implementar en siguiente fase
-        // IERC20(asset()).approve(strategy, amount);
-        // IStrategy(strategy).invest(amount);
+        // Aprobar la estrategia para gastar nuestros assets
+        IERC20(asset()).approve(strategy, amount);
+        
+        // Llamar a invest() de la estrategia
+        IStrategy(strategy).invest(amount);
     }
     
     /**
@@ -272,8 +356,25 @@ contract VaultToken is ERC4626, Ownable, ReentrancyGuard, Pausable {
      * @param amount Cantidad a retirar
      */
     function _divestFromStrategy(uint256 amount) internal {
-        // TODO: Implementar en siguiente fase
-        // IStrategy(strategy).divest(amount);
+        // La estrategia enviará los assets directamente al vault
+        IStrategy(strategy).divest(amount);
+    }
+    
+    // ========== UUPS UPGRADE AUTHORIZATION ==========
+    
+    /**
+     * @notice Autoriza upgrades del contrato (solo owner)
+     * @dev Función requerida por UUPSUpgradeable
+     * @param newImplementation Dirección de la nueva implementación
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    
+    /**
+     * @notice Retorna la versión actual del contrato
+     * @return Versión del contrato (ej: "1.0.0")
+     */
+    function version() public pure virtual returns (string memory) {
+        return "1.0.0";
     }
 }
 

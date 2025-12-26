@@ -35,7 +35,7 @@ Sanctuary es un vault DeFi de stablecoins en Base Network que representa un refu
 
 ### 🎯 Simplicidad Radical
 - **Deposit & Earn**: Deposita USDC, recibe shares, gana yields automáticamente
-- **Una Estrategia, Bien Hecha**: Foco en Aave V3 para estabilidad
+- **Estrategia Optimizada**: Auto Finance para máximos rendimientos (~8.82% APY)
 - **Gas Eficiente**: Optimizado para Base L2 (transacciones de centavos)
 
 ### 📊 Transparencia Total
@@ -58,15 +58,18 @@ Usuario → deposit(USDC) → VaultToken (ERC4626)
                             ↓
                      Mint vault shares
                             ↓
-                     Strategy.invest()
+                     AutoFinanceStrategy.invest()
                             ↓
-                     Aave V3.supply()
+                     Auto Finance Autopool
                             ↓
-                     Genera yield automático
+                  Rebalancea automáticamente entre:
+                  Aave, Morpho, Curve, Aerodrome, etc.
+                            ↓
+                     Genera yield automático (~8.82% APY)
                             ↓
                      harvest() (periódico)
                             ↓
-                     Cobra performance fee
+                     Cobra performance fee (10%)
                             ↓
                      Usuario puede withdraw() en cualquier momento
 ```
@@ -74,8 +77,8 @@ Usuario → deposit(USDC) → VaultToken (ERC4626)
 ### Contratos Principales
 
 - **VaultToken.sol**: Contrato principal ERC4626 que gestiona depósitos, retiros y shares
-- **AaveStrategy.sol**: *(En desarrollo)* Estrategia de lending en Aave V3
-- **Interfaces/**: Interfaces para estrategias y protocolos externos
+- **AutoFinanceStrategy.sol**: Estrategia de inversión en Auto Finance baseUSD Autopool
+- **Interfaces/**: Interfaces para estrategias (IStrategy, IAutoPool) y protocolos externos
 
 ---
 
@@ -147,11 +150,13 @@ forge test --match-test testDeposit -vvv
 
 ### Cobertura Actual
 
-- ✅ **18 tests pasando** (100%)
+- ✅ **25 tests pasando** (100%)
 - ✅ Tests de depósito y retiro
+- ✅ Tests de estrategia Auto Finance
 - ✅ Tests de edge cases
 - ✅ Tests de seguridad (pausable, access control)
 - ✅ Tests de ERC4626 compliance
+- ✅ Tests de upgrades (UUPS)
 - ✅ Fuzzing tests (256 runs por defecto)
 
 ---
@@ -211,9 +216,11 @@ cast call <vault-address> "totalAssets()" --rpc-url $BASE_SEPOLIA_RPC_URL
 - [x] Estructura del proyecto Foundry
 - [x] VaultToken.sol con ERC4626
 - [x] Suite completa de tests
+- [x] AutoFinanceStrategy.sol integrada
+- [x] Patrón UUPS Upgradeable
 - [x] Documentación técnica
-- [ ] AaveStrategy.sol
-- [ ] Deploy a Base Sepolia testnet
+- [ ] Deploy a Base Sepolia testnet con estrategia
+- [ ] Deploy a Base mainnet
 
 ### 🔄 Fase 2: Frontend (Próximo)
 - [ ] Setup Next.js + wagmi + RainbowKit
@@ -259,6 +266,7 @@ Si planeas usar este código en producción:
 - **[Arquitectura](./docs/ARQUITECTURA.md)**: Diseño del sistema y diagramas
 - **[Especificación Técnica](./docs/ESPECIFICACION_TECNICA.md)**: Detalles de implementación
 - **[Casos de Uso](./docs/CASOS_DE_USO.md)**: Ejemplos prácticos y flujos
+- **[Estrategia Auto Finance](./docs/ESTRATEGIA_AUTO_FINANCE.md)**: Documentación completa de la estrategia
 - **[Identidad de Marca](./docs/IDENTIDAD_MARCA.md)**: Guía de marca y comunicación
 
 ---
@@ -277,7 +285,8 @@ Si planeas usar este código en producción:
 - **Testnet**: Base Sepolia (Chain ID 84532)
 
 ### DeFi Integrations
-- **Aave V3**: Protocolo de lending principal
+- **Auto Finance**: Protocolo de optimización de yield principal (~8.82% APY)
+  - Integra: Aave, Morpho, Fluid, Euler, Curve, Aerodrome, Balancer
 - **USDC**: Asset principal (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
 
 ### Frontend (Próximamente)
@@ -334,12 +343,14 @@ pérdidas financieras o daños resultantes del uso de este software.
 - **OpenZeppelin**: Por los contratos seguros y auditados
 - **Foundry**: Por el mejor toolkit de desarrollo para Ethereum
 - **Base**: Por proporcionar un L2 rápido y accesible
-- **Aave**: Por el protocolo de lending líder en DeFi
+- **Auto Finance**: Por el protocolo de optimización de yields
+- **Aave, Morpho, Curve**: Por los protocolos DeFi subyacentes
 - **Comunidad DeFi**: Por la inspiración y mejores prácticas
 
 ### Referencias e Inspiración
 
 - [ERC4626 Standard](https://eips.ethereum.org/EIPS/eip-4626)
+- [Auto Finance](https://app.auto.finance/pools/baseUSD)
 - [YO Protocol](https://docs.yo.xyz)
 - [Yearn Finance](https://docs.yearn.fi/)
 - [Aave V3 Docs](https://docs.aave.com/developers/)
@@ -349,10 +360,10 @@ pérdidas financieras o daños resultantes del uso de este software.
 ## 📊 Estado del Proyecto
 
 **Última actualización**: Diciembre 2025  
-**Estado**: 🟡 En Desarrollo Activo (MVP)  
-**Fase**: Smart Contracts Core (60% completo)
+**Estado**: 🟢 MVP Funcional con Estrategia Auto Finance  
+**Fase**: Smart Contracts Core (85% completo)
 
-**Siguiente hito**: Deploy a Base Sepolia testnet
+**Siguiente hito**: Deploy a Base mainnet
 
 ---
 
