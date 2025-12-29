@@ -56,8 +56,9 @@ contract VaultToken is
     /// @notice Dirección del treasury donde van los fees
     address public treasury;
     
-    /// @notice Último totalAssets conocido (para tracking de yields)
-    uint256 public lastTotalAssets;
+    /// @notice High-Water Mark: último precio por share donde se cobraron fees
+    /// @dev Usa 18 decimales de precisión (1e18 = 1.0)
+    uint256 public lastHarvestedPricePerShare;
     
     // ========== CONSTANTS ==========
     
@@ -65,6 +66,7 @@ contract VaultToken is
     uint256 public constant MAX_MANAGEMENT_FEE = 500;   // 5% máximo
     uint256 public constant FEE_BASIS = 10_000;         // 100%
     uint256 public constant SECONDS_PER_YEAR = 365 days;
+    uint256 private constant PRECISION = 1e18;          // Precisión para PPS
     
     // ========== EVENTS ==========
     
@@ -122,7 +124,7 @@ contract VaultToken is
         lastFeeCollection = block.timestamp;
         maxTotalAssets = 1_000_000e6;       // 1M USDC (6 decimales)
         minDepositAmount = 0.01e6;          // 0.01 USDC
-        lastTotalAssets = 0;                // Inicializar tracking de yields
+        lastHarvestedPricePerShare = PRECISION; // 1:1 inicial (1e18)
     }
     
     // ========== DEPOSIT/WITHDRAW FUNCTIONS ==========
@@ -153,9 +155,6 @@ contract VaultToken is
         if (strategy != address(0)) {
             _investInStrategy(assets);
         }
-        
-        // Actualizar tracking para harvest
-        lastTotalAssets = totalAssets();
     }
     
     /**
@@ -179,14 +178,32 @@ contract VaultToken is
         // Si no hay suficiente balance idle, retirar de estrategia
         uint256 idle = IERC20(asset()).balanceOf(address(this));
         if (idle < assets && strategy != address(0)) {
-            _divestFromStrategy(assets - idle);
+            uint256 needed = assets - idle;
+            
+            // Pedir un poco más (1%) para compensar por slippage del autopool
+            // Esto evita el error "transfer amount exceeds balance"
+            uint256 toRequest = needed + (needed / 100);
+            
+            // No podemos pedir más de lo que la estrategia tiene
+            uint256 strategyBalance = IStrategy(strategy).totalAssets();
+            if (toRequest > strategyBalance) {
+                toRequest = strategyBalance;
+            }
+            
+            _divestFromStrategy(toRequest);
+            
+            // Verificar que ahora tengamos suficiente
+            uint256 newIdle = IERC20(asset()).balanceOf(address(this));
+            if (newIdle < assets) {
+                // Si aún no es suficiente, intentar divest todo lo que queda
+                if (strategyBalance > toRequest) {
+                    _divestFromStrategy(strategyBalance - toRequest);
+                }
+            }
         }
         
         // Llamar a la implementación base de ERC4626
         shares = super.withdraw(assets, receiver, owner);
-        
-        // Actualizar tracking para harvest
-        lastTotalAssets = totalAssets();
     }
     
     /**
@@ -213,52 +230,79 @@ contract VaultToken is
         // Si no hay suficiente balance idle, retirar de estrategia
         uint256 idle = IERC20(asset()).balanceOf(address(this));
         if (idle < assets && strategy != address(0)) {
-            _divestFromStrategy(assets - idle);
+            uint256 needed = assets - idle;
+            
+            // Pedir un poco más (1%) para compensar por slippage del autopool
+            uint256 toRequest = needed + (needed / 100);
+            
+            // No podemos pedir más de lo que la estrategia tiene
+            uint256 strategyBalance = IStrategy(strategy).totalAssets();
+            if (toRequest > strategyBalance) {
+                toRequest = strategyBalance;
+            }
+            
+            _divestFromStrategy(toRequest);
+            
+            // Verificar que ahora tengamos suficiente
+            uint256 newIdle = IERC20(asset()).balanceOf(address(this));
+            if (newIdle < assets) {
+                // Si aún no es suficiente, intentar divest todo lo que queda
+                if (strategyBalance > toRequest) {
+                    _divestFromStrategy(strategyBalance - toRequest);
+                }
+            }
         }
         
         // Llamar a la implementación base de ERC4626
         assets = super.redeem(shares, receiver, owner);
-        
-        // Actualizar tracking para harvest
-        lastTotalAssets = totalAssets();
     }
     
     // ========== VAULT MANAGEMENT ==========
     
     /**
-     * @notice Recolecta yields de la estrategia y cobra fees
-     * @dev Solo puede ser llamado por el owner o un keeper autorizado
+     * @notice Recolecta yields de la estrategia y cobra performance fees
+     * @dev Usa High-Water Mark basado en precio por share para calcular ganancias
+     *      Solo cobra fees cuando el PPS supera el máximo histórico
+     *      Inmune a deposits/withdraws ya que estos no afectan el PPS
      */
     function harvest() external virtual onlyOwner {
         if (strategy == address(0)) revert NoAssetsToHarvest();
         
-        // El balance actual incluye todos los yields acumulados
-        uint256 currentTotalAssets = totalAssets();
+        // Si no hay shares emitidos, no hay nada que hacer
+        uint256 supply = totalSupply();
+        if (supply == 0) return;
         
-        // Si es el primer harvest o no hay yields, actualizar y salir
-        if (lastTotalAssets == 0 || currentTotalAssets <= lastTotalAssets) {
-            lastTotalAssets = currentTotalAssets;
+        // Calcular precio actual por share con precisión de 18 decimales
+        uint256 currentPPS = (totalAssets() * PRECISION) / supply;
+        
+        // Si no superamos el High-Water Mark, no hay ganancias
+        if (currentPPS <= lastHarvestedPricePerShare) {
             lastFeeCollection = block.timestamp;
-            return;
+            return; // No cobrar fees en pérdidas o sin ganancias
         }
         
-        // Calcular profit = incremento en assets
-        uint256 profit = currentTotalAssets - lastTotalAssets;
+        // Calcular profit por share
+        uint256 profitPerShare = currentPPS - lastHarvestedPricePerShare;
         
-        // Cobrar performance fee sobre el profit
-        uint256 feeAmount = (profit * performanceFee) / FEE_BASIS;
+        // Profit total = profit por share * total de shares
+        uint256 totalProfit = (profitPerShare * supply) / PRECISION;
+        
+        // Calcular performance fee sobre el profit
+        uint256 feeAmount = (totalProfit * performanceFee) / FEE_BASIS;
         
         if (feeAmount > 0) {
-            // Retirar el fee amount de la estrategia al vault
+            // Retirar el fee de la estrategia al vault
             _divestFromStrategy(feeAmount);
             
             // Transferir fee al treasury
             IERC20(asset()).transfer(treasury, feeAmount);
-            emit Harvested(profit, feeAmount);
+            emit Harvested(totalProfit, feeAmount);
         }
         
-        // Actualizar el tracking (descontar los fees cobrados)
-        lastTotalAssets = totalAssets();
+        // CRÍTICO: Actualizar el High-Water Mark DESPUÉS de cobrar fees
+        // Esto previene double-charging y establece el nuevo máximo histórico
+        uint256 newPPS = (totalAssets() * PRECISION) / totalSupply();
+        lastHarvestedPricePerShare = newPPS;
         lastFeeCollection = block.timestamp;
     }
     

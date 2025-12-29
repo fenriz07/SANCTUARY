@@ -31,12 +31,10 @@ help:
 	@echo "  make verify-testnet   - Verificar contratos en testnet"
 	@echo ""
 	@echo "🚀 Deploy Mainnet (Base):"
-	@echo "  make deploy-mainnet   - Deploy completo a mainnet"
-	@echo "  make verify-mainnet   - Verificar contratos en mainnet"
-	@echo ""
-	@echo "🔄 Upgrades:"
-	@echo "  make upgrade-testnet  - Upgrade a V2 en testnet"
-	@echo "  make upgrade-mainnet  - Upgrade a V2 en mainnet"
+	@echo "  make deploy-mainnet           - Deploy VaultToken a mainnet"
+	@echo "  make deploy-strategy-mainnet  - Deploy AutoFinanceStrategy a mainnet"
+	@echo "  make connect-strategy-mainnet - Conectar strategy al vault"
+	@echo "  make verify-mainnet           - Verificar contratos en mainnet"
 	@echo ""
 	@echo "🔍 Inspección:"
 	@echo "  make status-testnet   - Ver estado del vault en testnet"
@@ -46,6 +44,15 @@ help:
 	@echo "💰 Operaciones de Usuario (Testnet):"
 	@echo "  make deposit-testnet  - Depositar USDC en el vault"
 	@echo "  make withdraw-testnet - Retirar USDC del vault"
+	@echo ""
+	@echo "💎 Operaciones de Usuario (Mainnet):"
+	@echo "  make approve-usdc-mainnet - Aprobar USDC para el vault"
+	@echo "  make deposit-mainnet      - Depositar USDC en el vault"
+	@echo "  make withdraw-mainnet     - Retirar USDC del vault"
+	@echo ""
+	@echo "🔧 Comandos Admin (Mainnet):"
+	@echo "  make approve-autopool-shares STRATEGY=0x...     - Fix: Aprobar shares del autopool"
+	@echo "  make emergency-withdraw-strategy STRATEGY=0x... - Recuperar fondos de estrategia"
 	@echo ""
 	@echo "🏠 Local Development:"
 	@echo "  make setup-local      - Setup Anvil + Mock USDC"
@@ -191,6 +198,50 @@ deploy-mainnet:
 		echo "❌ Mainnet deployment cancelled"; \
 	fi
 
+# 🔄 UPGRADE MAINNET
+# ======================================
+
+upgrade-mainnet:
+	@echo "╔════════════════════════════════════════════════════════╗"
+	@echo "║       ⚠️  MAINNET UPGRADE - REAL FUNDS AT RISK  ⚠️      ║"
+	@echo "╚════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "📍 Network: Base Mainnet (Chain ID: 8453)"
+	@echo "👤 Deployer: $$(cast wallet address --private-key $(PRIVATE_KEY))"
+	@echo "💰 Balance: $$(cast balance --ether $$(cast wallet address --private-key $(PRIVATE_KEY)) --rpc-url $(BASE_RPC_URL)) ETH"
+	@echo ""
+	@echo "🔧 This will upgrade the VaultToken implementation"
+	@echo "   Proxy: 0x1dba528d6534477de47bcfebfb1f196d433dc7f9"
+	@echo ""
+	@echo "⚠️  CHECKLIST:"
+	@echo "  [ ] Tests passing (make test)"
+	@echo "  [ ] New implementation tested"
+	@echo "  [ ] Storage layout compatible"
+	@echo "  [ ] Emergency plan ready"
+	@echo ""
+	@read -p "Type 'UPGRADE' to confirm mainnet upgrade: " confirm; \
+	if [ "$$confirm" = "UPGRADE" ]; then \
+		echo "🔄 Starting mainnet upgrade..."; \
+		forge script script/UpgradeVault.s.sol \
+			--rpc-url $(BASE_RPC_URL) \
+			--broadcast \
+			--verify \
+			-vvvv; \
+		echo ""; \
+		echo "✅ MAINNET UPGRADE COMPLETE!"; \
+		echo ""; \
+		echo "🔍 Test the upgrade:"; \
+		echo "   make withdraw-mainnet AMOUNT=0.01 VAULT_PROXY=0x1dba528d6534477de47bcfebfb1f196d433dc7f9"; \
+	else \
+		echo "❌ Mainnet upgrade cancelled"; \
+	fi
+
+upgrade-mainnet-dry:
+	@echo "🔄 Simulating mainnet upgrade..."
+	forge script script/UpgradeVault.s.sol \
+		--rpc-url $(BASE_RPC_URL) \
+		-vvvv
+
 deploy-mainnet-dry:
 	@echo "🚀 Simulating mainnet deployment..."
 	forge script script/DeployVaultProxy.s.sol \
@@ -211,65 +262,101 @@ verify-mainnet:
 		--watch
 	@echo "✅ Verification complete!"
 
-# ======================================
-# 🔄 UPGRADES
-# ======================================
-
-upgrade-testnet:
-	@echo "🔄 Upgrading Vault on Base Sepolia..."
-	@if [ -z "$(VAULT_PROXY)" ]; then \
-		echo "❌ Error: VAULT_PROXY not set"; \
-		echo "Usage: make upgrade-testnet VAULT_PROXY=0x..."; \
-		exit 1; \
-	fi
-	@echo "📍 Proxy Address: $(VAULT_PROXY)"
-	@echo "🔑 Current Owner: $$(cast call $(VAULT_PROXY) "owner()" --rpc-url $(BASE_SEPOLIA_RPC_URL))"
-	@echo ""
-	@read -p "Continue with upgrade? [y/N] " confirm; \
-	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
-		sed -i 's/address constant PROXY_ADDRESS = address(0);/address constant PROXY_ADDRESS = $(VAULT_PROXY);/' script/UpgradeVaultProxy.s.sol; \
-		forge script script/UpgradeVaultProxy.s.sol \
-			--rpc-url $(BASE_SEPOLIA_RPC_URL) \
-			--broadcast \
-			--verify \
-			-vvvv; \
-		echo "✅ Upgrade complete!"; \
-	else \
-		echo "❌ Upgrade cancelled"; \
-	fi
-
-upgrade-mainnet:
+deploy-strategy-mainnet:
 	@echo "╔════════════════════════════════════════════════════════╗"
-	@echo "║         ⚠️  MAINNET UPGRADE - USE CAUTION  ⚠️          ║"
+	@echo "║    🎯 DEPLOY AUTO FINANCE STRATEGY TO MAINNET  🎯     ║"
 	@echo "╚════════════════════════════════════════════════════════╝"
 	@echo ""
 	@if [ -z "$(VAULT_PROXY)" ]; then \
 		echo "❌ Error: VAULT_PROXY not set"; \
-		echo "Usage: make upgrade-mainnet VAULT_PROXY=0x..."; \
+		echo "Usage: make deploy-strategy-mainnet VAULT_PROXY=0x..."; \
 		exit 1; \
 	fi
-	@echo "📍 Proxy Address: $(VAULT_PROXY)"
-	@echo "🔑 Current Owner: $$(cast call $(VAULT_PROXY) "owner()" --rpc-url $(BASE_RPC_URL))"
-	@echo "💰 TVL: $$(cast call $(VAULT_PROXY) "totalAssets()" --rpc-url $(BASE_RPC_URL))"
+	@echo "📍 Network: Base Mainnet (Chain ID: 8453)"
+	@echo "📍 Vault Proxy: $(VAULT_PROXY)"
+	@echo "👤 Deployer: $$(cast wallet address --private-key $(PRIVATE_KEY))"
+	@echo "💰 Balance: $$(cast balance --ether $$(cast wallet address --private-key $(PRIVATE_KEY)) --rpc-url $(BASE_RPC_URL)) ETH"
 	@echo ""
-	@echo "⚠️  UPGRADE CHECKLIST:"
-	@echo "  [ ] Storage layout validated"
-	@echo "  [ ] Upgrade tested on testnet"
+	@echo "📦 Strategy: AutoFinanceStrategy"
+	@echo "🎯 Target: Auto Finance baseUSD Autopool"
+	@echo "💎 Asset: USDC (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)"
+	@echo "📊 APY: ~8.82% (variable)"
+	@echo ""
+	@echo "⚠️  CHECKLIST:"
+	@echo "  [ ] Vault deployed successfully"
+	@echo "  [ ] Auto Finance pool verified (0x9c6864105AEC23388C89600046213a44C384c831)"
+	@echo "  [ ] Strategy tested on fork"
 	@echo "  [ ] Code audited"
-	@echo "  [ ] Multisig ready (if applicable)"
 	@echo ""
-	@read -p "Type 'UPGRADE' to confirm mainnet upgrade: " confirm; \
-	if [ "$$confirm" = "UPGRADE" ]; then \
-		echo "🚀 Starting mainnet upgrade..."; \
-		sed -i 's/address constant PROXY_ADDRESS = address(0);/address constant PROXY_ADDRESS = $(VAULT_PROXY);/' script/UpgradeVaultProxy.s.sol; \
-		forge script script/UpgradeVaultProxy.s.sol \
+	@read -p "Type 'DEPLOY' to confirm strategy deployment: " confirm; \
+	if [ "$$confirm" = "DEPLOY" ]; then \
+		echo "🚀 Starting strategy deployment..."; \
+		VAULT_PROXY=$(VAULT_PROXY) forge script script/DeployAutoFinanceStrategy.s.sol \
 			--rpc-url $(BASE_RPC_URL) \
 			--broadcast \
 			--verify \
 			-vvvv; \
-		echo "✅ MAINNET UPGRADE COMPLETE!"; \
+		echo ""; \
+		echo "✅ STRATEGY DEPLOYMENT COMPLETE!"; \
+		echo ""; \
+		echo "📝 NEXT STEPS:"; \
+		echo "   1. Verify strategy address on BaseScan"; \
+		echo "   2. If updateStrategy() failed, call manually from owner"; \
+		echo "   3. Test with small deposit (0.01 USDC)"; \
+		echo "   4. Monitor APY and strategy performance"; \
+		echo "   5. Gradually increase maxTotalAssets"; \
 	else \
-		echo "❌ Mainnet upgrade cancelled"; \
+		echo "❌ Strategy deployment cancelled"; \
+	fi
+
+deploy-strategy-mainnet-dry:
+	@echo "🎯 Simulating strategy deployment to mainnet..."
+	@if [ -z "$(VAULT_PROXY)" ]; then \
+		echo "❌ Error: VAULT_PROXY not set"; \
+		echo "Usage: make deploy-strategy-mainnet-dry VAULT_PROXY=0x..."; \
+		exit 1; \
+	fi
+	VAULT_PROXY=$(VAULT_PROXY) forge script script/DeployAutoFinanceStrategy.s.sol \
+		--rpc-url $(BASE_RPC_URL) \
+		-vvvv
+
+connect-strategy-mainnet:
+	@echo "╔════════════════════════════════════════════════════════╗"
+	@echo "║      🔗 CONNECT STRATEGY TO VAULT (MAINNET)  🔗       ║"
+	@echo "╚════════════════════════════════════════════════════════╝"
+	@echo ""
+	@if [ -z "$(VAULT_PROXY)" ]; then \
+		echo "❌ Error: VAULT_PROXY not set"; \
+		echo "Usage: make connect-strategy-mainnet VAULT_PROXY=0x... STRATEGY=0x..."; \
+		exit 1; \
+	fi
+	@if [ -z "$(STRATEGY)" ]; then \
+		echo "❌ Error: STRATEGY not set"; \
+		echo "Usage: make connect-strategy-mainnet VAULT_PROXY=0x... STRATEGY=0x..."; \
+		exit 1; \
+	fi
+	@echo "📍 Vault Proxy: $(VAULT_PROXY)"
+	@echo "🎯 Strategy: $(STRATEGY)"
+	@echo "👤 Sender: $$(cast wallet address --private-key $(PRIVATE_KEY))"
+	@echo ""
+	@echo "⚠️  This will:"
+	@echo "  - Call vault.updateStrategy($(STRATEGY))"
+	@echo "  - Requires: You are the owner of the vault"
+	@echo ""
+	@read -p "Type 'CONNECT' to confirm: " confirm; \
+	if [ "$$confirm" = "CONNECT" ]; then \
+		echo "🔗 Connecting strategy to vault..."; \
+		cast send $(VAULT_PROXY) \
+			"updateStrategy(address)" \
+			$(STRATEGY) \
+			--rpc-url $(BASE_RPC_URL) \
+			--private-key $(PRIVATE_KEY); \
+		echo ""; \
+		echo "✅ Strategy connected!"; \
+		echo ""; \
+		echo "🔍 Verify with: make status-mainnet VAULT_PROXY=$(VAULT_PROXY)"; \
+	else \
+		echo "❌ Connection cancelled"; \
 	fi
 
 # ======================================
@@ -307,6 +394,25 @@ status-testnet:
 	else \
 		echo "⏸️  Paused: Yes"; \
 	fi
+	@echo ""
+	@echo "📊 Share Value:"
+	@TOTAL_SUPPLY=$$(cast call $(VAULT_PROXY) "totalSupply()" --rpc-url $(BASE_SEPOLIA_RPC_URL) | xargs cast --to-dec); \
+	TOTAL_ASSETS=$$(cast call $(VAULT_PROXY) "totalAssets()" --rpc-url $(BASE_SEPOLIA_RPC_URL) | xargs cast --to-dec); \
+	if [ $$TOTAL_SUPPLY -gt 0 ]; then \
+		SHARE_PRICE=$$(echo "scale=6; $$TOTAL_ASSETS / $$TOTAL_SUPPLY" | bc); \
+		if [ "$$(echo "$$SHARE_PRICE" | cut -c1)" = "." ]; then \
+			SHARE_PRICE="0$$SHARE_PRICE"; \
+		fi; \
+		echo "💎 Price per Share: $$SHARE_PRICE USDC"; \
+		TOTAL_SUPPLY_HUMAN=$$(echo "scale=6; $$TOTAL_SUPPLY / 1000000" | bc); \
+		if [ "$$(echo "$$TOTAL_SUPPLY_HUMAN" | cut -c1)" = "." ]; then \
+			TOTAL_SUPPLY_HUMAN="0$$TOTAL_SUPPLY_HUMAN"; \
+		fi; \
+		echo "📈 Total Supply: $$TOTAL_SUPPLY_HUMAN shares ($$TOTAL_SUPPLY raw)"; \
+	else \
+		echo "💎 Price per Share: 1.000000 USDC (initial)"; \
+		echo "📈 Total Supply: 0 shares (empty vault)"; \
+	fi
 
 status-mainnet:
 	@echo "🔍 Vault Status on Base Mainnet"
@@ -317,24 +423,49 @@ status-mainnet:
 		exit 1; \
 	fi
 	@echo "📍 Proxy: $(VAULT_PROXY)"
-	@VERSION=$$(cast call $(VAULT_PROXY) "version()" --rpc-url $(BASE_RPC_URL) | xargs cast --to-ascii); \
+	@VERSION=$$(cast call $(VAULT_PROXY) "version()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-ascii 2>/dev/null || echo "N/A"); \
 	echo "📊 Version: $$VERSION"
-	@OWNER=$$(cast call $(VAULT_PROXY) "owner()" --rpc-url $(BASE_RPC_URL)); \
+	@OWNER=$$(cast call $(VAULT_PROXY) "owner()" --rpc-url $(BASE_RPC_URL) 2>/dev/null || echo "N/A"); \
 	echo "👤 Owner: $$OWNER"
-	@TVL=$$(cast call $(VAULT_PROXY) "totalAssets()" --rpc-url $(BASE_RPC_URL) | xargs cast --to-dec); \
-	TVL_USDC=$$(echo "scale=2; $$TVL / 1000000" | bc); \
-	echo "💰 TVL: $$TVL_USDC USDC ($$TVL raw)"
-	@PERF_FEE=$$(cast call $(VAULT_PROXY) "performanceFee()" --rpc-url $(BASE_RPC_URL) | xargs cast --to-dec); \
-	PERF_PCT=$$(echo "scale=2; $$PERF_FEE / 100" | bc); \
+	@STRATEGY=$$(cast call $(VAULT_PROXY) "strategy()" --rpc-url $(BASE_RPC_URL) 2>/dev/null || echo "N/A"); \
+	echo "🎯 Strategy: $$STRATEGY"
+	@TVL=$$(cast call $(VAULT_PROXY) "totalAssets()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	if [ "$$TVL" != "0" ] && [ "$$TVL" != "" ]; then \
+		TVL_USDC=$$(echo "scale=6; $$TVL / 1000000" | bc 2>/dev/null || echo "0"); \
+		echo "💰 TVL: $$TVL_USDC USDC ($$TVL raw)"; \
+	else \
+		echo "💰 TVL: 0 USDC (0 raw)"; \
+	fi
+	@PERF_FEE=$$(cast call $(VAULT_PROXY) "performanceFee()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	PERF_PCT=$$(echo "scale=2; $$PERF_FEE / 100" | bc 2>/dev/null || echo "0"); \
 	echo "📈 Performance Fee: $$PERF_PCT% ($$PERF_FEE bps)"
-	@MGMT_FEE=$$(cast call $(VAULT_PROXY) "managementFee()" --rpc-url $(BASE_RPC_URL) | xargs cast --to-dec); \
-	MGMT_PCT=$$(echo "scale=2; $$MGMT_FEE / 100" | bc); \
+	@MGMT_FEE=$$(cast call $(VAULT_PROXY) "managementFee()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	MGMT_PCT=$$(echo "scale=2; $$MGMT_FEE / 100" | bc 2>/dev/null || echo "0"); \
 	echo "📈 Management Fee: $$MGMT_PCT% ($$MGMT_FEE bps)"
-	@PAUSED=$$(cast call $(VAULT_PROXY) "paused()" --rpc-url $(BASE_RPC_URL)); \
+	@PAUSED=$$(cast call $(VAULT_PROXY) "paused()" --rpc-url $(BASE_RPC_URL) 2>/dev/null || echo "0x0000000000000000000000000000000000000000000000000000000000000000"); \
 	if [ "$$PAUSED" = "0x0000000000000000000000000000000000000000000000000000000000000000" ]; then \
 		echo "⏸️  Paused: No"; \
 	else \
 		echo "⏸️  Paused: Yes"; \
+	fi
+	@echo ""
+	@echo "📊 Share Value:"
+	@TOTAL_SUPPLY=$$(cast call $(VAULT_PROXY) "totalSupply()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	TOTAL_ASSETS=$$(cast call $(VAULT_PROXY) "totalAssets()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	if [ "$$TOTAL_SUPPLY" != "0" ] && [ "$$TOTAL_SUPPLY" != "" ] && [ "$$TOTAL_ASSETS" != "0" ]; then \
+		SHARE_PRICE=$$(echo "scale=6; $$TOTAL_ASSETS / $$TOTAL_SUPPLY" | bc 2>/dev/null || echo "1.000000"); \
+		if [ "$$(echo "$$SHARE_PRICE" | cut -c1)" = "." ]; then \
+			SHARE_PRICE="0$$SHARE_PRICE"; \
+		fi; \
+		echo "💎 Price per Share: $$SHARE_PRICE USDC"; \
+		TOTAL_SUPPLY_HUMAN=$$(echo "scale=6; $$TOTAL_SUPPLY / 1000000" | bc 2>/dev/null || echo "0"); \
+		if [ "$$(echo "$$TOTAL_SUPPLY_HUMAN" | cut -c1)" = "." ]; then \
+			TOTAL_SUPPLY_HUMAN="0$$TOTAL_SUPPLY_HUMAN"; \
+		fi; \
+		echo "📈 Total Supply: $$TOTAL_SUPPLY_HUMAN shares ($$TOTAL_SUPPLY raw)"; \
+	else \
+		echo "💎 Price per Share: 1.000000 USDC (initial)"; \
+		echo "📈 Total Supply: 0 shares (empty vault)"; \
 	fi
 
 storage:
@@ -555,6 +686,315 @@ withdraw-testnet:
 	else \
 		echo "   ❌ Withdrawal failed"; \
 		exit 1; \
+	fi
+
+# ======================================
+# 💰 USER OPERATIONS (Mainnet)
+# ======================================
+
+USDC_MAINNET = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+
+approve-usdc-mainnet:
+	@echo "✅ Aprobar USDC para Vault (Base Mainnet)"
+	@echo "════════════════════════════════════════════"
+	@if [ -z "$(AMOUNT)" ]; then \
+		echo "❌ Error: AMOUNT not set"; \
+		echo "Usage: make approve-usdc-mainnet AMOUNT=10.5 VAULT_PROXY=0x..."; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make approve-usdc-mainnet AMOUNT=1 VAULT_PROXY=0x...      # Approve 1 USDC"; \
+		echo "  make approve-usdc-mainnet AMOUNT=100 VAULT_PROXY=0x...    # Approve 100 USDC"; \
+		echo "  make approve-usdc-mainnet AMOUNT=unlimited VAULT_PROXY=0x... # Approve unlimited"; \
+		exit 1; \
+	fi
+	@if [ -z "$(VAULT_PROXY)" ]; then \
+		echo "❌ Error: VAULT_PROXY not set"; \
+		exit 1; \
+	fi
+	@if [ -z "$(USER_PRIVATE_KEY)" ]; then \
+		echo "❌ Error: USER_PRIVATE_KEY not set in .env"; \
+		exit 1; \
+	fi
+	@USER_ADDRESS=$$(cast wallet address --private-key $(USER_PRIVATE_KEY)); \
+	echo "👤 User: $$USER_ADDRESS"; \
+	echo "📍 Vault: $(VAULT_PROXY)"; \
+	echo "💵 USDC: $(USDC_MAINNET)"; \
+	echo ""; \
+	if [ "$(AMOUNT)" = "unlimited" ]; then \
+		AMOUNT_RAW="115792089237316195423570985008687907853269984665640564039457584007913129639935"; \
+		echo "📊 Approving: Unlimited USDC"; \
+	else \
+		AMOUNT_RAW=$$(echo "$(AMOUNT) * 1000000" | bc | cut -d'.' -f1); \
+		echo "📊 Approving: $(AMOUNT) USDC ($$AMOUNT_RAW raw)"; \
+	fi; \
+	echo ""; \
+	echo "🔄 Sending approval transaction..."; \
+	cast send $(USDC_MAINNET) \
+		"approve(address,uint256)" \
+		$(VAULT_PROXY) \
+		$$AMOUNT_RAW \
+		--private-key $(USER_PRIVATE_KEY) \
+		--rpc-url $(BASE_RPC_URL); \
+	echo ""; \
+	echo "✅ USDC approval successful!"; \
+	echo ""; \
+	ALLOWANCE=$$(cast call $(USDC_MAINNET) "allowance(address,address)" $$USER_ADDRESS $(VAULT_PROXY) --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	if [ "$$ALLOWANCE" = "115792089237316195423570985008687907853269984665640564039457584007913129639935" ] || [ $$(echo "$$ALLOWANCE > 1000000000000000000000" | bc) -eq 1 ]; then \
+		echo "✅ Current allowance: Unlimited"; \
+	else \
+		ALLOWANCE_HUMAN=$$(echo "scale=2; $$ALLOWANCE / 1000000" | bc 2>/dev/null || echo "0"); \
+		echo "✅ Current allowance: $$ALLOWANCE_HUMAN USDC"; \
+	fi
+
+deposit-mainnet:
+	@echo "💰 Depositar en Vault (Base Mainnet)"
+	@echo "════════════════════════════════════════"
+	@if [ -z "$(AMOUNT)" ]; then \
+		echo "❌ Error: AMOUNT not set"; \
+		echo "Usage: make deposit-mainnet AMOUNT=10.5 VAULT_PROXY=0x..."; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make deposit-mainnet AMOUNT=1 VAULT_PROXY=0x...    # Deposit 1 USDC"; \
+		echo "  make deposit-mainnet AMOUNT=10.50 VAULT_PROXY=0x... # Deposit 10.50 USDC"; \
+		exit 1; \
+	fi
+	@if [ -z "$(VAULT_PROXY)" ]; then \
+		echo "❌ Error: VAULT_PROXY not set"; \
+		exit 1; \
+	fi
+	@if [ -z "$(USER_PRIVATE_KEY)" ]; then \
+		echo "❌ Error: USER_PRIVATE_KEY not set in .env"; \
+		exit 1; \
+	fi
+	@AMOUNT_RAW=$$(echo "$(AMOUNT) * 1000000" | bc | cut -d'.' -f1); \
+	USER_ADDRESS=$$(cast wallet address --private-key $(USER_PRIVATE_KEY)); \
+	echo "📊 Amount: $(AMOUNT) USDC ($$AMOUNT_RAW raw)"; \
+	echo "👤 Depositor: $$USER_ADDRESS"; \
+	echo "📍 Vault: $(VAULT_PROXY)"; \
+	echo "💵 USDC: $(USDC_MAINNET)"; \
+	echo ""; \
+	echo "Checking balances..."; \
+	USDC_BALANCE=$$(cast call $(USDC_MAINNET) "balanceOf(address)" $$USER_ADDRESS --rpc-url $(BASE_RPC_URL) | xargs cast --to-dec); \
+	USDC_BALANCE_HUMAN=$$(echo "scale=2; $$USDC_BALANCE / 1000000" | bc); \
+	echo "💵 USDC Balance: $$USDC_BALANCE_HUMAN USDC"; \
+	if [ $$USDC_BALANCE -lt $$AMOUNT_RAW ]; then \
+		echo "❌ Insufficient USDC balance!"; \
+		exit 1; \
+	fi; \
+	ALLOWANCE=$$(cast call $(USDC_MAINNET) "allowance(address,address)" $$USER_ADDRESS $(VAULT_PROXY) --rpc-url $(BASE_RPC_URL) | xargs cast --to-dec); \
+	ALLOWANCE_HUMAN=$$(echo "scale=2; $$ALLOWANCE / 1000000" | bc); \
+	echo "✅ USDC Allowance: $$ALLOWANCE_HUMAN USDC"; \
+	if [ $$ALLOWANCE -lt $$AMOUNT_RAW ]; then \
+		echo ""; \
+		echo "⚠️  Insufficient allowance! Please approve first:"; \
+		echo "   make approve-usdc-mainnet AMOUNT=$(AMOUNT) VAULT_PROXY=$(VAULT_PROXY)"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "🔄 Depositing..."; \
+	DEPOSIT_OUTPUT=$$(cast send $(VAULT_PROXY) \
+		"deposit(uint256,address)" \
+		$$AMOUNT_RAW \
+		$$USER_ADDRESS \
+		--private-key $(USER_PRIVATE_KEY) \
+		--rpc-url $(BASE_RPC_URL) \
+		2>&1); \
+	if echo "$$DEPOSIT_OUTPUT" | grep -q "transactionHash"; then \
+		TX_HASH=$$(echo "$$DEPOSIT_OUTPUT" | grep -o 'transactionHash.*0x[a-fA-F0-9]\{64\}' | grep -o '0x[a-fA-F0-9]\{64\}' | head -1); \
+		echo "   ✅ Deposit successful!"; \
+		echo ""; \
+		echo "📊 Transaction: https://basescan.org/tx/$$TX_HASH"; \
+		echo ""; \
+		echo "Checking your vault shares..."; \
+		SHARES=$$(cast call $(VAULT_PROXY) "balanceOf(address)" $$USER_ADDRESS --rpc-url $(BASE_RPC_URL) | xargs cast --to-dec); \
+		SHARES_HUMAN=$$(echo "scale=6; $$SHARES / 1000000" | bc); \
+		echo "🎫 Your vault shares: $$SHARES_HUMAN"; \
+		echo ""; \
+		echo "🔍 Check vault status: make status-mainnet VAULT_PROXY=$(VAULT_PROXY)"; \
+	else \
+		echo "   ❌ Deposit failed"; \
+		echo "Error details:"; \
+		echo "$$DEPOSIT_OUTPUT" | head -10; \
+		exit 1; \
+	fi
+
+withdraw-mainnet:
+	@echo "💸 Retirar del Vault (Base Mainnet)"
+	@echo "════════════════════════════════════════"
+	@if [ -z "$(AMOUNT)" ]; then \
+		echo "❌ Error: AMOUNT not set"; \
+		echo "Usage: make withdraw-mainnet AMOUNT=10.5 VAULT_PROXY=0x..."; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make withdraw-mainnet AMOUNT=1 VAULT_PROXY=0x...    # Withdraw 1 USDC"; \
+		echo "  make withdraw-mainnet AMOUNT=all VAULT_PROXY=0x...  # Withdraw all"; \
+		exit 1; \
+	fi
+	@if [ -z "$(VAULT_PROXY)" ]; then \
+		echo "❌ Error: VAULT_PROXY not set"; \
+		exit 1; \
+	fi
+	@if [ -z "$(USER_PRIVATE_KEY)" ]; then \
+		echo "❌ Error: USER_PRIVATE_KEY not set in .env"; \
+		exit 1; \
+	fi
+	@USER_ADDRESS=$$(cast wallet address --private-key $(USER_PRIVATE_KEY)); \
+	echo "👤 Withdrawer: $$USER_ADDRESS"; \
+	echo "📍 Vault: $(VAULT_PROXY)"; \
+	echo "💵 USDC: $(USDC_MAINNET)"; \
+	echo ""; \
+	SHARES=$$(cast call $(VAULT_PROXY) "balanceOf(address)" $$USER_ADDRESS --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	SHARES_HUMAN=$$(echo "scale=6; $$SHARES / 1000000" | bc 2>/dev/null || echo "0"); \
+	echo "🎫 Your vault shares: $$SHARES_HUMAN"; \
+	if [ "$$SHARES" = "0" ] || [ -z "$$SHARES" ]; then \
+		echo "❌ No shares to withdraw!"; \
+		exit 1; \
+	fi; \
+	if [ "$(AMOUNT)" = "all" ]; then \
+		echo "📊 Withdrawing all shares"; \
+		echo ""; \
+		echo "🔄 Processing redeem..."; \
+		WITHDRAW_OUTPUT=$$(cast send $(VAULT_PROXY) \
+			"redeem(uint256,address,address)" \
+			$$SHARES \
+			$$USER_ADDRESS \
+			$$USER_ADDRESS \
+			--private-key $(USER_PRIVATE_KEY) \
+			--rpc-url $(BASE_RPC_URL) \
+			2>&1); \
+	else \
+		AMOUNT_RAW=$$(echo "$(AMOUNT) * 1000000" | bc | cut -d'.' -f1); \
+		echo "📊 Amount: $(AMOUNT) USDC ($$AMOUNT_RAW raw)"; \
+		echo ""; \
+		echo "🔄 Processing withdrawal..."; \
+		WITHDRAW_OUTPUT=$$(cast send $(VAULT_PROXY) \
+			"withdraw(uint256,address,address)" \
+			$$AMOUNT_RAW \
+			$$USER_ADDRESS \
+			$$USER_ADDRESS \
+			--private-key $(USER_PRIVATE_KEY) \
+			--rpc-url $(BASE_RPC_URL) \
+			2>&1); \
+	fi; \
+	if echo "$$WITHDRAW_OUTPUT" | grep -q "transactionHash"; then \
+		TX_HASH=$$(echo "$$WITHDRAW_OUTPUT" | grep -o 'transactionHash.*0x[a-fA-F0-9]\{64\}' | grep -o '0x[a-fA-F0-9]\{64\}' | head -1); \
+		echo "   ✅ Withdrawal successful!"; \
+		echo ""; \
+		echo "📊 Transaction: https://basescan.org/tx/$$TX_HASH"; \
+		echo ""; \
+		echo "Checking your balances..."; \
+		USDC_BALANCE=$$(cast call $(USDC_MAINNET) "balanceOf(address)" $$USER_ADDRESS --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+		USDC_BALANCE_HUMAN=$$(echo "scale=2; $$USDC_BALANCE / 1000000" | bc 2>/dev/null || echo "0"); \
+		echo "💵 USDC Balance: $$USDC_BALANCE_HUMAN USDC"; \
+		REMAINING_SHARES=$$(cast call $(VAULT_PROXY) "balanceOf(address)" $$USER_ADDRESS --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+		REMAINING_SHARES_HUMAN=$$(echo "scale=6; $$REMAINING_SHARES / 1000000" | bc 2>/dev/null || echo "0"); \
+		echo "🎫 Remaining vault shares: $$REMAINING_SHARES_HUMAN"; \
+		echo ""; \
+		echo "🔍 Check vault status: make status-mainnet VAULT_PROXY=$(VAULT_PROXY)"; \
+	else \
+		echo "   ❌ Withdrawal failed"; \
+		echo "Error details:"; \
+		echo "$$WITHDRAW_OUTPUT" | head -10; \
+		exit 1; \
+	fi
+
+approve-autopool-shares:
+	@echo "╔════════════════════════════════════════════════════════╗"
+	@echo "║   🔓 APROBAR SHARES DEL AUTOPOOL (FIX WITHDRAW)  🔓   ║"
+	@echo "╚════════════════════════════════════════════════════════╝"
+	@echo ""
+	@if [ -z "$(STRATEGY)" ]; then \
+		echo "❌ Error: STRATEGY not set"; \
+		echo "Usage: make approve-autopool-shares STRATEGY=0x..."; \
+		exit 1; \
+	fi
+	@echo "🎯 Strategy: $(STRATEGY)"
+	@echo "🏦 AutoPool: 0x9c6864105AEC23388C89600046213a44C384c831"
+	@echo "👤 Executor: $$(cast wallet address --private-key $(PRIVATE_KEY))"
+	@echo ""
+	@echo "⚠️  Esto aprobará al AutoPool para quemar las shares de la estrategia"
+	@echo "    Necesario para que withdraw() funcione correctamente"
+	@echo ""
+	@read -p "Type 'APPROVE' to confirm: " confirm; \
+	if [ "$$confirm" = "APPROVE" ]; then \
+		echo "🔓 Aprobando shares..."; \
+		cast send 0x9c6864105AEC23388C89600046213a44C384c831 \
+			"approve(address,uint256)" \
+			0x9c6864105AEC23388C89600046213a44C384c831 \
+			115792089237316195423570985008687907853269984665640564039457584007913129639935 \
+			--rpc-url $(BASE_RPC_URL) \
+			--private-key $(PRIVATE_KEY); \
+		echo ""; \
+		echo "✅ Approval exitoso!"; \
+		echo ""; \
+		echo "🔍 Verificar allowance:"; \
+		ALLOWANCE=$$(cast call 0x9c6864105AEC23388C89600046213a44C384c831 \
+			"allowance(address,address)" \
+			$(STRATEGY) \
+			0x9c6864105AEC23388C89600046213a44C384c831 \
+			--rpc-url $(BASE_RPC_URL) | xargs cast --to-dec); \
+		if [ "$$ALLOWANCE" = "115792089237316195423570985008687907853269984665640564039457584007913129639935" ]; then \
+			echo "✅ Allowance: Unlimited (correcto)"; \
+		else \
+			echo "✅ Allowance: $$ALLOWANCE"; \
+		fi; \
+		echo ""; \
+		echo "🎉 Ahora puedes hacer withdraw:"; \
+		echo "   make withdraw-mainnet AMOUNT=0.05 VAULT_PROXY=0x9678a01Eb9c7545ED422399d34900a5019ae71bE"; \
+	else \
+		echo "❌ Approval cancelado"; \
+	fi
+
+emergency-withdraw-strategy:
+	@echo "╔════════════════════════════════════════════════════════╗"
+	@echo "║   🚨 EMERGENCY WITHDRAW FROM STRATEGY  🚨             ║"
+	@echo "╚════════════════════════════════════════════════════════╝"
+	@echo ""
+	@if [ -z "$(STRATEGY)" ]; then \
+		echo "❌ Error: STRATEGY not set"; \
+		echo "Usage: make emergency-withdraw-strategy STRATEGY=0x..."; \
+		exit 1; \
+	fi
+	@echo "🎯 Strategy: $(STRATEGY)"
+	@echo "👤 Executor: $$(cast wallet address --private-key $(PRIVATE_KEY))"
+	@echo ""
+	@echo "🔍 Verificando fondos en estrategia..."
+	@TOTAL_ASSETS=$$(cast call $(STRATEGY) "totalAssets()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	TOTAL_SHARES=$$(cast call $(STRATEGY) "totalShares()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+	echo "💰 Total Assets: $$TOTAL_ASSETS ($$(($$TOTAL_ASSETS / 1000000)) USDC)"; \
+	echo "📊 Total Shares: $$TOTAL_SHARES"; \
+	echo ""; \
+	if [ "$$TOTAL_ASSETS" = "0" ]; then \
+		echo "✅ No hay fondos en la estrategia"; \
+		exit 0; \
+	fi; \
+	echo "⚠️  Esto retirará TODOS los fondos de la estrategia al vault"; \
+	echo ""; \
+	read -p "Type 'WITHDRAW' to confirm: " confirm; \
+	if [ "$$confirm" = "WITHDRAW" ]; then \
+		echo "🚨 Ejecutando emergencyWithdraw()..."; \
+		cast send $(STRATEGY) \
+			"emergencyWithdraw()" \
+			--rpc-url $(BASE_RPC_URL) \
+			--private-key $(PRIVATE_KEY); \
+		echo ""; \
+		echo "✅ Fondos recuperados!"; \
+		echo ""; \
+		echo "🔍 Verificando que la estrategia quedó vacía:"; \
+		NEW_ASSETS=$$(cast call $(STRATEGY) "totalAssets()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+		NEW_SHARES=$$(cast call $(STRATEGY) "totalShares()" --rpc-url $(BASE_RPC_URL) 2>/dev/null | xargs cast --to-dec 2>/dev/null || echo "0"); \
+		echo "💰 Total Assets ahora: $$NEW_ASSETS"; \
+		echo "📊 Total Shares ahora: $$NEW_SHARES"; \
+		if [ "$$NEW_ASSETS" = "0" ] && [ "$$NEW_SHARES" = "0" ]; then \
+			echo "✅ Estrategia vacía correctamente"; \
+		else \
+			echo "⚠️  Aún quedan fondos en la estrategia"; \
+		fi; \
+		echo ""; \
+		echo "🎉 Siguiente paso: Deploy nueva estrategia"; \
+		echo "   make deploy-strategy-mainnet"; \
+	else \
+		echo "❌ Withdraw cancelado"; \
 	fi
 
 # ======================================

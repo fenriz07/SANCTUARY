@@ -8,31 +8,28 @@ import "../src/interfaces/IAutoPool.sol";
 
 /**
  * @title DeployAutoFinanceStrategy
- * @notice Script para deployar y configurar la estrategia de Auto Finance
+ * @notice Script para deployar y configurar la estrategia de Auto Finance en Base Mainnet
  * @dev Despliega AutoFinanceStrategy y la conecta al vault existente
+ * 
+ * NOTA: Solo funciona en Base Mainnet - Auto Finance no está disponible en testnet
  * 
  * Uso:
  * forge script script/DeployAutoFinanceStrategy.s.sol:DeployAutoFinanceStrategy \
- *   --rpc-url $BASE_SEPOLIA_RPC_URL \
+ *   --rpc-url $BASE_MAINNET_RPC_URL \
  *   --broadcast \
  *   --verify
  * 
  * Variables de entorno requeridas:
- * - BASE_SEPOLIA_RPC_URL: URL del RPC de Base Sepolia
+ * - BASE_MAINNET_RPC_URL: URL del RPC de Base Mainnet
  * - PRIVATE_KEY: Private key del deployer
- * - ETHERSCAN_API_KEY: API key para verificación
+ * - ETHERSCAN_API_KEY: API key para verificación en BaseScan
  */
 contract DeployAutoFinanceStrategy is Script {
     
-    // ========== ADDRESSES ==========
+    // ========== ADDRESSES - BASE MAINNET ONLY ==========
     
-    // Base Mainnet
     address constant USDC_BASE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-    address constant AUTO_POOL_BASE_USD = 0x275F0A1Db98db1c4e915BDE5B5D2F5a5eD4C6D8F; // Placeholder - necesita confirmación
-    
-    // Base Sepolia (testnet)
-    address constant USDC_SEPOLIA = 0x036CbD53842c5426634e7929541eC2318f3dCF7e; // Mock USDC
-    address constant AUTO_POOL_SEPOLIA = address(0); // No disponible en testnet
+    address constant AUTO_POOL_BASE_USD = 0x9c6864105AEC23388C89600046213a44C384c831;
     
     // ========== STATE VARIABLES ==========
     
@@ -51,30 +48,17 @@ contract DeployAutoFinanceStrategy is Script {
         console.log("Deployer:", deployer);
         console.log("Network:", block.chainid);
         
-        // Determinar addresses según la red
-        address usdc;
-        address autoPool;
+        // Verificar que estamos en Base Mainnet
+        require(block.chainid == 8453, "This script only works on Base Mainnet (chain ID 8453)");
+        console.log("Network: Base Mainnet");
         
-        if (block.chainid == 8453) {
-            // Base Mainnet
-            console.log("Network: Base Mainnet");
-            usdc = USDC_BASE;
-            autoPool = AUTO_POOL_BASE_USD;
-        } else if (block.chainid == 84532) {
-            // Base Sepolia
-            console.log("Network: Base Sepolia");
-            usdc = USDC_SEPOLIA;
-            autoPool = AUTO_POOL_SEPOLIA;
-            
-            // NOTA: Auto Finance no está disponible en testnet
-            // Para testear, se puede deployar un mock de IAutoPool
-            require(autoPool != address(0), "Auto Finance not available on testnet");
-        } else {
-            revert("Unsupported network");
-        }
+        // Addresses de mainnet
+        address usdc = USDC_BASE;
+        address autoPool = AUTO_POOL_BASE_USD;
         
-        // Cargar dirección del vault proxy desde archivo
-        vaultProxy = _loadVaultProxyAddress();
+        // Cargar dirección del vault proxy desde variable de entorno
+        vaultProxy = vm.envAddress("VAULT_PROXY");
+        require(vaultProxy != address(0), "VAULT_PROXY environment variable not set");
         console.log("Vault Proxy:", vaultProxy);
         
         // Cargar treasury desde el vault
@@ -120,56 +104,12 @@ contract DeployAutoFinanceStrategy is Script {
         console.log("Auto Pool:", autoPool);
         console.log("Owner:", deployer);
         
-        // Guardar addresses
-        _saveDeployment(address(strategy), vaultProxy, usdc, autoPool);
-        
         console.log("\n=== Next Steps ===");
         console.log("1. Verify contract on BaseScan");
         console.log("2. If updateStrategy() failed, call it manually:");
         console.log("   vault.updateStrategy(", address(strategy), ")");
         console.log("3. Test deposit/withdraw flow");
         console.log("4. Monitor APY and yields");
-    }
-    
-    // ========== HELPERS ==========
-    
-    function _loadVaultProxyAddress() internal view returns (address) {
-        string memory root = vm.projectRoot();
-        string memory path = string.concat(root, "/cache/.deployment.json");
-        
-        try vm.readFile(path) returns (string memory json) {
-            bytes memory data = vm.parseJson(json, ".vaultProxy");
-            address addr = abi.decode(data, (address));
-            require(addr != address(0), "Invalid vault proxy address");
-            return addr;
-        } catch {
-            revert("Could not load vault proxy address from cache/.deployment.json");
-        }
-    }
-    
-    function _saveDeployment(
-        address strategy,
-        address vault,
-        address usdc,
-        address autoPool
-    ) internal {
-        string memory root = vm.projectRoot();
-        string memory path = string.concat(root, "/cache/.deployment.json");
-        
-        // Leer archivo existente
-        string memory json = vm.readFile(path);
-        
-        // Parsear y agregar nueva info
-        string memory obj = "deployment";
-        vm.serializeAddress(obj, "autoFinanceStrategy", strategy);
-        vm.serializeAddress(obj, "vaultProxy", vault);
-        vm.serializeAddress(obj, "usdc", usdc);
-        string memory output = vm.serializeAddress(obj, "autoPool", autoPool);
-        
-        // Escribir de vuelta
-        vm.writeJson(output, path);
-        
-        console.log("\nDeployment info saved to:", path);
     }
 }
 

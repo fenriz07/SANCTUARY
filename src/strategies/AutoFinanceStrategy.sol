@@ -52,6 +52,7 @@ contract AutoFinanceStrategy is IStrategy, Ownable, ReentrancyGuard {
     // ========== CUSTOM ERRORS ==========
     
     error SlippageTooHigh();
+    error SlippageExceeded();
     error ZeroAmount();
     error ZeroAddress();
     
@@ -142,8 +143,9 @@ contract AutoFinanceStrategy is IStrategy, Ownable, ReentrancyGuard {
     {
         if (amount == 0) revert ZeroAmount();
         
-        // Calcular cuántas shares necesitamos quemar
-        uint256 sharesToBurn = autoPool.previewWithdraw(amount);
+        // Convertir el amount deseado a shares usando convertToShares
+        // Esto evita el bug de previewWithdraw() que causa StateChangeDuringStaticCall
+        uint256 sharesToBurn = autoPool.convertToShares(amount);
         
         // Validar que tengamos suficientes shares
         if (sharesToBurn > totalShares) revert IStrategy.InsufficientBalance();
@@ -151,15 +153,15 @@ contract AutoFinanceStrategy is IStrategy, Ownable, ReentrancyGuard {
         // Calcular assets mínimos aceptables (protección slippage)
         uint256 minAssets = amount * (BASIS_POINTS - slippageTolerance) / BASIS_POINTS;
         
-        // Retirar de Auto Finance
-        // withdraw(assets, receiver, owner) retorna shares quemadas
-        uint256 sharesBurned = autoPool.withdraw(amount, vault, address(this));
+        // Usar redeem() en lugar de withdraw() para evitar el bug del AutoPool
+        // redeem(shares, receiver, owner) retorna assets recibidos
+        actualAmount = autoPool.redeem(sharesToBurn, vault, address(this));
+        
+        // Validar slippage
+        if (actualAmount < minAssets) revert SlippageExceeded();
         
         // Actualizar contabilidad
-        totalShares -= sharesBurned;
-        
-        // El withdraw ya envió los assets al vault directamente
-        actualAmount = amount;
+        totalShares -= sharesToBurn;
         
         emit Divested(actualAmount);
     }
@@ -257,6 +259,15 @@ contract AutoFinanceStrategy is IStrategy, Ownable, ReentrancyGuard {
     }
     
     // ========== ADMIN FUNCTIONS ==========
+    
+    /**
+     * @notice Aprueba al AutoPool para gastar sus propias shares
+     * @dev Necesario para que withdraw() funcione. Solo callable por owner.
+     * Esta función soluciona un bug del constructor que no aprobaba las shares.
+     */
+    function approveAutoPoolShares() external onlyOwner {
+        IERC20(address(autoPool)).forceApprove(address(autoPool), type(uint256).max);
+    }
     
     /**
      * @notice Actualiza la tolerancia al slippage

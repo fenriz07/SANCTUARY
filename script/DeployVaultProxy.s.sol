@@ -18,8 +18,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract DeployVaultProxy is Script {
     
     // Configuración para Base Sepolia (testnet)
-    address constant USDC_BASE_SEPOLIA = 0x036CbD53842c5426634e7929541eC2318f3dCF7e; // Mock USDC
-    address constant TREASURY = address(0x8b710Fb249e087b52f20E6afAaDd9829c138D175); // Cambiar!
+    address constant USDC_BASE_SEPOLIA = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
+    address constant TREASURY = address(0x8b710Fb249e087b52f20E6afAaDd9829c138D175); 
     
     // Configuración para Base Mainnet
     address constant USDC_BASE_MAINNET = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
